@@ -45,6 +45,7 @@ use App\BookingRepository;
 $action = $_GET['action'] ?? 'index';
 $search = trim($_GET['search'] ?? '');
 $statusFilter = trim($_GET['status'] ?? '');
+$showArchived = ($_GET['show'] ?? '') === 'archived';
 $flashMessage = '';
 
 $isHtmx = isset($_SERVER['HTTP_HX_REQUEST']) && $_SERVER['HTTP_HX_REQUEST'] === 'true';
@@ -65,7 +66,7 @@ switch ($action) {
         $booking = $repo->find($id);
         if (!$booking) {
             http_response_code(404);
-            echo "<div class='p-4 text-rose-600 bg-rose-50 rounded-lg'>Booking not found.</div>";
+            echo "<div class='p-4 text-rose-600 dark:text-rose-300 bg-rose-50 dark:bg-rose-500/10 rounded-lg'>Booking not found.</div>";
             exit;
         }
         $mode = 'edit';
@@ -113,9 +114,17 @@ switch ($action) {
         }
         break;
 
+    case 'restore':
+        $id = (int)($_GET['id'] ?? 0);
+        if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0) {
+            $repo->restore($id);
+            $flashMessage = "Booking #SW-" . str_pad((string)$id, 5, '0', STR_PAD_LEFT) . " restored.";
+        }
+        break;
+
     case 'quick_status':
         $id = (int)($_GET['id'] ?? 0);
-        $newStatus = (string)($_GET['status'] ?? '');
+        $newStatus = (string)($_GET['new_status'] ?? '');
         if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0 && !empty($newStatus)) {
             $repo->updateStatus($id, $newStatus);
             $flashMessage = "Status updated to {$newStatus}.";
@@ -129,43 +138,34 @@ switch ($action) {
         break;
 }
 
-$bookings = $repo->getAll($search, $statusFilter);
+$bookings = $repo->getAll($search, $statusFilter, $showArchived);
 $stats = $repo->getStats();
 
 if ($isHtmx) {
-    if (!empty($flashMessage)) {
-        echo "<div id='flash-banner' class='mb-6 p-4 rounded-xl bg-teal-50 border border-teal-200 text-teal-800 text-sm flex items-center justify-between shadow-sm animate-fade-in'>
-                <div class='flex items-center gap-2.5'>
-                    <svg class='w-5 h-5 text-teal-600' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z'/></svg>
-                    <span>" . htmlspecialchars($flashMessage) . "</span>
-                </div>
-                <button onclick=\"document.getElementById('flash-banner').remove()\" class='text-teal-600 hover:text-teal-800'>
-                    <svg class='w-4 h-4' fill='none' stroke='currentColor' viewBox='0 0 24 24'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M6 18L18 6M6 6l12 12'/></svg>
-                </button>
-              </div>";
-    }
+    $oob = true;
+    require __DIR__ . '/views/flash.php';
     echo "<div id='skeleton-loading' class='hidden space-y-6 animate-pulse'>
             <div class='grid grid-cols-2 md:grid-cols-4 gap-4 mb-6'>";
     for ($i = 0; $i < 4; $i++) {
-        echo "<div class='bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm flex items-center justify-between'>
+        echo "<div class='bg-white dark:bg-night-800 p-4 rounded-xl border border-slate-200/80 dark:border-night-600 shadow-sm flex items-center justify-between'>
                 <div class='space-y-2 flex-1'>
-                    <div class='h-3 bg-slate-200 rounded w-20'></div>
-                    <div class='h-6 bg-slate-200 rounded w-12'></div>
+                    <div class='h-3 bg-slate-200 dark:bg-night-600 rounded w-20'></div>
+                    <div class='h-6 bg-slate-200 dark:bg-night-600 rounded w-12'></div>
                 </div>
-                <div class='w-10 h-10 bg-slate-100 rounded-lg'></div>
+                <div class='w-10 h-10 bg-slate-100 dark:bg-night-700 rounded-lg'></div>
               </div>";
     }
     echo "</div>
-          <div class='bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-4'>
-            <div class='h-5 bg-slate-200 rounded w-1/4 mb-4'></div>";
+          <div class='bg-white dark:bg-night-800 rounded-xl shadow-sm border border-slate-200 dark:border-night-600 p-4 space-y-4'>
+            <div class='h-5 bg-slate-200 dark:bg-night-600 rounded w-1/4 mb-4'></div>";
     for ($i = 0; $i < 4; $i++) {
-        echo "<div class='flex items-center justify-between py-3 border-b border-slate-100 last:border-0 gap-4'>
-                <div class='h-4 bg-slate-200 rounded w-20'></div>
-                <div class='h-4 bg-slate-200 rounded w-32'></div>
-                <div class='h-4 bg-slate-200 rounded w-48'></div>
-                <div class='h-4 bg-slate-200 rounded w-16'></div>
-                <div class='h-6 bg-slate-200 rounded-full w-20'></div>
-                <div class='h-4 bg-slate-200 rounded w-12'></div>
+        echo "<div class='flex items-center justify-between py-3 border-b border-slate-100 dark:border-night-700 last:border-0 gap-4'>
+                <div class='h-4 bg-slate-200 dark:bg-night-600 rounded w-20'></div>
+                <div class='h-4 bg-slate-200 dark:bg-night-600 rounded w-32'></div>
+                <div class='h-4 bg-slate-200 dark:bg-night-600 rounded w-48'></div>
+                <div class='h-4 bg-slate-200 dark:bg-night-600 rounded w-16'></div>
+                <div class='h-6 bg-slate-200 dark:bg-night-600 rounded-full w-20'></div>
+                <div class='h-4 bg-slate-200 dark:bg-night-600 rounded w-12'></div>
               </div>";
     }
     echo "</div></div>";

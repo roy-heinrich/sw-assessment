@@ -14,9 +14,9 @@ class BookingRepository
         $this->db = $db ?? Database::getConnection();
     }
 
-    public function getAll(string $search = '', string $status = ''): array
+    public function getAll(string $search = '', string $status = '', bool $archived = false): array
     {
-        $sql = "SELECT * FROM bookings WHERE 1=1";
+        $sql = "SELECT * FROM bookings WHERE " . ($archived ? "deleted_at IS NOT NULL" : "deleted_at IS NULL");
         $params = [];
 
         if (!empty($search)) {
@@ -49,6 +49,7 @@ class BookingRepository
                 SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) as pending,
                 SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) as completed
             FROM bookings
+            WHERE deleted_at IS NULL
         ");
         $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
         return [
@@ -61,7 +62,7 @@ class BookingRepository
 
     public function find(int $id): ?array
     {
-        $stmt = $this->db->prepare("SELECT * FROM bookings WHERE id = :id LIMIT 1");
+        $stmt = $this->db->prepare("SELECT * FROM bookings WHERE id = :id AND deleted_at IS NULL LIMIT 1");
         $stmt->execute([':id' => $id]);
         $row = $stmt->fetch(PDO::FETCH_ASSOC);
         return $row ?: null;
@@ -121,7 +122,13 @@ class BookingRepository
 
     public function delete(int $id): bool
     {
-        $stmt = $this->db->prepare("DELETE FROM bookings WHERE id = :id");
+        $stmt = $this->db->prepare("UPDATE bookings SET deleted_at = CURRENT_TIMESTAMP WHERE id = :id AND deleted_at IS NULL");
+        return $stmt->execute([':id' => $id]);
+    }
+
+    public function restore(int $id): bool
+    {
+        $stmt = $this->db->prepare("UPDATE bookings SET deleted_at = NULL WHERE id = :id");
         return $stmt->execute([':id' => $id]);
     }
 

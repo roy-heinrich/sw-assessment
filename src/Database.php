@@ -19,6 +19,7 @@ class Database
         $databaseUrl = getenv('DATABASE_URL') ?: ($_ENV['DATABASE_URL'] ?? '');
         if ($databaseUrl) {
             self::$instance = self::connectNeonUrl($databaseUrl);
+            self::ensureSoftDeleteColumn(self::$instance, 'pgsql');
         } else {
             $dbPath = sys_get_temp_dir() . '/southwest_tours.sqlite';
             self::$instance = new PDO("sqlite:{$dbPath}", null, null, [
@@ -27,6 +28,7 @@ class Database
             ]);
             if (!self::$schemaInitialized) {
                 self::initSchema(self::$instance);
+                self::ensureSoftDeleteColumn(self::$instance, 'sqlite');
                 self::$schemaInitialized = true;
             }
         }
@@ -68,6 +70,32 @@ class Database
         ]);
     }
 
+    /**
+     * Soft delete was added after the table already existed, and CREATE TABLE IF NOT EXISTS
+     * will not add a column to an existing table. Patch it in; safe and cheap to repeat.
+     */
+    private static function ensureSoftDeleteColumn(PDO $pdo, string $driver): void
+    {
+        if ($driver === 'pgsql') {
+            // A read avoids taking a write lock on every request the way ALTER ... IF NOT EXISTS would.
+            $exists = $pdo->query(
+                "SELECT 1 FROM information_schema.columns WHERE table_name = 'bookings' AND column_name = 'deleted_at'"
+            )->fetchColumn();
+            if (!$exists) {
+                $pdo->exec("ALTER TABLE bookings ADD COLUMN deleted_at TIMESTAMP NULL");
+            }
+            return;
+        }
+
+        // SQLite has no ADD COLUMN IF NOT EXISTS, so check first.
+        foreach ($pdo->query("PRAGMA table_info(bookings)")->fetchAll(PDO::FETCH_ASSOC) as $col) {
+            if (($col['name'] ?? '') === 'deleted_at') {
+                return;
+            }
+        }
+        $pdo->exec("ALTER TABLE bookings ADD COLUMN deleted_at TEXT NULL");
+    }
+
     private static function initSchema(PDO $pdo): void
     {
         $driver = $pdo->getAttribute(PDO::ATTR_DRIVER_NAME);
@@ -85,7 +113,8 @@ class Database
                     passengers INT NOT NULL DEFAULT 1,
                     status VARCHAR(50) NOT NULL DEFAULT 'Confirmed',
                     notes TEXT,
-                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TIMESTAMP NULL
                 );
             ";
         } else {
@@ -101,23 +130,12 @@ class Database
                     passengers INTEGER NOT NULL DEFAULT 1,
                     status TEXT NOT NULL DEFAULT 'Confirmed',
                     notes TEXT,
-                    created_at TEXT DEFAULT CURRENT_TIMESTAMP
+                    created_at TEXT DEFAULT CURRENT_TIMESTAMP,
+                    deleted_at TEXT NULL
                 );
             ";
         }
 
         $pdo->exec($sql);
-
-        $count = (int)$pdo->query("SELECT COUNT(*) FROM bookings")->fetchColumn();
-        if ($count === 0) {
-            $sampleDate = date('Y-m-d', strtotime('+1 day'));
-            $pdo->exec("
-                INSERT INTO bookings (guest_name, contact_number, service_type, pickup_point, dropoff_point, travel_date, passengers, status, notes)
-                VALUES 
-                ('Juan Dela Cruz', '+63 917 123 4567', 'Airport Shuttle (Kalibo to Boracay)', 'Kalibo International Airport (KLO)', 'Station 2 Hotel (Boracay)', '{$sampleDate}', 2, 'Confirmed', 'Flight PR2969 arriving 10:30 AM'),
-                ('Maria Santos', '+63 920 987 6543', 'Express Speedboat Transfer', 'Caticlan Airport (MPH)', 'Station 1 Resort (Boracay)', '{$sampleDate}', 4, 'Pending', 'Family with 2 kids, requested child life vests'),
-                ('Alexander Smith', '+1 415 555 2671', 'Private Van Transfer', 'Kalibo Airport (KLO)', 'Station 3 Villa (Boracay)', '{$sampleDate}', 1, 'Completed', 'VIP Transfer with luggage assistance')
-            ");
-        }
     }
 }
