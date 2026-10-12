@@ -51,19 +51,32 @@
         .htmx-request.htmx-indicator {
             display: flex !important;
         }
-        /* Show skeleton while request is active */
-        #search-spinner.htmx-request {
-            display: flex !important;
+        /* Top indeterminate loading bar */
+        #global-progress {
+            display: none;
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 3px;
+            background: linear-gradient(to right, #14b8a6, #10b981, #06b6d4);
+            z-index: 9999;
+            background-size: 200% 100%;
+            animation: moveProgress 1s linear infinite;
         }
-        .htmx-request #skeleton-loading {
+        @keyframes moveProgress {
+            0% { background-position: 200% 0; }
+            100% { background-position: -200% 0; }
+        }
+        .htmx-request#global-progress,
+        body.htmx-request #global-progress {
             display: block !important;
-        }
-        .htmx-request #manifest-data {
-            display: none !important;
         }
     </style>
 </head>
-<body onkeydown="if(event.key === 'Escape') { const m = document.getElementById('modal-container'); if(m) m.innerHTML = ''; }" class="h-full text-slate-800 antialiased flex flex-col font-sans selection:bg-teal-500 selection:text-white">
+<body hx-indicator="#global-progress" onkeydown="if(event.key === 'Escape') { const m = document.getElementById('modal-container'); if(m) m.innerHTML = ''; }" class="h-full text-slate-800 antialiased flex flex-col font-sans selection:bg-teal-500 selection:text-white">
+
+    <div id="global-progress"></div>
 
     <header class="bg-white border-b border-slate-200/80 sticky top-0 z-40 shadow-sm">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
