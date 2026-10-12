@@ -42,7 +42,6 @@ spl_autoload_register(function (string $class) {
 
 use App\BookingRepository;
 
-$repo = new BookingRepository();
 $action = $_GET['action'] ?? 'index';
 $search = trim($_GET['search'] ?? '');
 $statusFilter = trim($_GET['status'] ?? '');
@@ -50,13 +49,17 @@ $flashMessage = '';
 
 $isHtmx = isset($_SERVER['HTTP_HX_REQUEST']) && $_SERVER['HTTP_HX_REQUEST'] === 'true';
 
-switch ($action) {
-    case 'create_form':
-        $mode = 'create';
-        $booking = null;
-        require __DIR__ . '/views/form_modal.php';
-        exit;
+// The create modal reads no data; render it before opening a DB connection.
+if ($action === 'create_form') {
+    $mode = 'create';
+    $booking = null;
+    require __DIR__ . '/views/form_modal.php';
+    exit;
+}
 
+$repo = new BookingRepository();
+
+switch ($action) {
     case 'edit_form':
         $id = (int)($_GET['id'] ?? 0);
         $booking = $repo->find($id);
