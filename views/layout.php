@@ -45,11 +45,21 @@
             transition: opacity 200ms ease-in;
         }
         .htmx-indicator {
-            display: none;
+            display: none !important;
         }
         .htmx-request .htmx-indicator,
         .htmx-request.htmx-indicator {
-            display: inline-block;
+            display: flex !important;
+        }
+        /* Show skeleton while request is active */
+        #search-spinner.htmx-request {
+            display: flex !important;
+        }
+        .htmx-request #skeleton-loading {
+            display: block !important;
+        }
+        .htmx-request #manifest-data {
+            display: none !important;
         }
     </style>
 </head>
@@ -119,12 +129,13 @@
                     value="<?= htmlspecialchars($search ?? '') ?>"
                     hx-get="?action=search"
                     hx-target="#main-content"
+                    hx-indicator="#search-spinner, #main-content"
                     hx-swap="innerHTML"
-                    hx-trigger="keyup changed delay:250ms, search"
+                    hx-trigger="keyup changed delay:400ms, search"
                     hx-include="#status-filter"
                     class="w-full pl-10 pr-10 py-2.5 text-sm rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition">
                 
-                <div class="htmx-indicator absolute inset-y-0 right-0 pr-3.5 flex items-center text-teal-600">
+                <div id="search-spinner" class="htmx-indicator absolute inset-y-0 right-0 pr-3.5 items-center text-teal-600">
                     <svg class="animate-spin h-4 w-4" viewBox="0 0 24 24" fill="none"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8v8H4z"></path></svg>
                 </div>
             </div>
@@ -137,6 +148,7 @@
                         name="status"
                         hx-get="?action=filter"
                         hx-target="#main-content"
+                        hx-indicator="#search-spinner, #main-content"
                         hx-swap="innerHTML"
                         hx-include="#search-input"
                         class="px-3 py-2 text-sm rounded-xl border border-slate-200 bg-slate-50/50 focus:bg-white text-slate-700 font-medium focus:outline-none focus:ring-2 focus:ring-teal-500 transition">
@@ -158,8 +170,39 @@
         </div>
 
         <div id="main-content" class="transition-all duration-200">
-            <?php require __DIR__ . '/stats.php'; ?>
-            <?php require __DIR__ . '/table.php'; ?>
+            <!-- Skeleton shown automatically during HTMX requests -->
+            <div id="skeleton-loading" class="hidden space-y-6 animate-pulse">
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+                    <?php for ($i = 0; $i < 4; $i++): ?>
+                        <div class="bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm flex items-center justify-between">
+                            <div class="space-y-2 flex-1">
+                                <div class="h-3 bg-slate-200 rounded w-20"></div>
+                                <div class="h-6 bg-slate-200 rounded w-12"></div>
+                            </div>
+                            <div class="w-10 h-10 bg-slate-100 rounded-lg"></div>
+                        </div>
+                    <?php endfor; ?>
+                </div>
+
+                <div class="bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-4">
+                    <div class="h-5 bg-slate-200 rounded w-1/4 mb-4"></div>
+                    <?php for ($i = 0; $i < 4; $i++): ?>
+                        <div class="flex items-center justify-between py-3 border-b border-slate-100 last:border-0 gap-4">
+                            <div class="h-4 bg-slate-200 rounded w-20"></div>
+                            <div class="h-4 bg-slate-200 rounded w-32"></div>
+                            <div class="h-4 bg-slate-200 rounded w-48"></div>
+                            <div class="h-4 bg-slate-200 rounded w-16"></div>
+                            <div class="h-6 bg-slate-200 rounded-full w-20"></div>
+                            <div class="h-4 bg-slate-200 rounded w-12"></div>
+                        </div>
+                    <?php endfor; ?>
+                </div>
+            </div>
+
+            <div id="manifest-data">
+                <?php require __DIR__ . '/stats.php'; ?>
+                <?php require __DIR__ . '/table.php'; ?>
+            </div>
         </div>
 
     </main>

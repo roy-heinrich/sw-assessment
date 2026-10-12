@@ -16,47 +16,19 @@ class Database
             return self::$instance;
         }
 
-        try {
-            $databaseUrl = getenv('DATABASE_URL') ?: ($_ENV['DATABASE_URL'] ?? null);
-
-            if ($databaseUrl) {
-                self::$instance = self::connectNeonUrl($databaseUrl);
-            } else {
-                $host = getenv('DB_HOST') ?: ($_ENV['DB_HOST'] ?? null);
-                $dbName = getenv('DB_NAME') ?: ($_ENV['DB_NAME'] ?? null);
-                $user = getenv('DB_USER') ?: ($_ENV['DB_USER'] ?? null);
-                $pass = getenv('DB_PASS') ?: ($_ENV['DB_PASS'] ?? '');
-                $port = getenv('DB_PORT') ?: ($_ENV['DB_PORT'] ?? '5432');
-                $sslMode = getenv('DB_SSLMODE') ?: ($_ENV['DB_SSLMODE'] ?? 'require');
-
-                if ($host && $dbName && $user) {
-                    $dsn = "pgsql:host={$host};port={$port};dbname={$dbName};sslmode={$sslMode}";
-                    self::$instance = new PDO($dsn, $user, $pass, [
-                        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                        PDO::ATTR_EMULATE_PREPARES => true,
-                        PDO::ATTR_TIMEOUT => 15,
-                    ]);
-                } else {
-                    $dbPath = sys_get_temp_dir() . '/southwest_tours.sqlite';
-                    self::$instance = new PDO("sqlite:{$dbPath}", null, null, [
-                        PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
-                        PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-                    ]);
-                }
-            }
-        } catch (\Throwable $e) {
-            error_log("DB connection error: " . $e->getMessage());
+        $databaseUrl = getenv('DATABASE_URL') ?: ($_ENV['DATABASE_URL'] ?? '');
+        if ($databaseUrl) {
+            self::$instance = self::connectNeonUrl($databaseUrl);
+        } else {
             $dbPath = sys_get_temp_dir() . '/southwest_tours.sqlite';
             self::$instance = new PDO("sqlite:{$dbPath}", null, null, [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             ]);
-        }
-
-        if (!self::$schemaInitialized) {
-            self::initSchema(self::$instance);
-            self::$schemaInitialized = true;
+            if (!self::$schemaInitialized) {
+                self::initSchema(self::$instance);
+                self::$schemaInitialized = true;
+            }
         }
 
         return self::$instance;

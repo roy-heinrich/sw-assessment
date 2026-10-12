@@ -141,8 +141,36 @@ if ($isHtmx) {
                 </button>
               </div>";
     }
+    echo "<div id='skeleton-loading' class='hidden space-y-6 animate-pulse'>
+            <div class='grid grid-cols-2 md:grid-cols-4 gap-4 mb-6'>";
+    for ($i = 0; $i < 4; $i++) {
+        echo "<div class='bg-white p-4 rounded-xl border border-slate-200/80 shadow-sm flex items-center justify-between'>
+                <div class='space-y-2 flex-1'>
+                    <div class='h-3 bg-slate-200 rounded w-20'></div>
+                    <div class='h-6 bg-slate-200 rounded w-12'></div>
+                </div>
+                <div class='w-10 h-10 bg-slate-100 rounded-lg'></div>
+              </div>";
+    }
+    echo "</div>
+          <div class='bg-white rounded-xl shadow-sm border border-slate-200 p-4 space-y-4'>
+            <div class='h-5 bg-slate-200 rounded w-1/4 mb-4'></div>";
+    for ($i = 0; $i < 4; $i++) {
+        echo "<div class='flex items-center justify-between py-3 border-b border-slate-100 last:border-0 gap-4'>
+                <div class='h-4 bg-slate-200 rounded w-20'></div>
+                <div class='h-4 bg-slate-200 rounded w-32'></div>
+                <div class='h-4 bg-slate-200 rounded w-48'></div>
+                <div class='h-4 bg-slate-200 rounded w-16'></div>
+                <div class='h-6 bg-slate-200 rounded-full w-20'></div>
+                <div class='h-4 bg-slate-200 rounded w-12'></div>
+              </div>";
+    }
+    echo "</div></div>";
+
+    echo "<div id='manifest-data'>";
     require __DIR__ . '/views/stats.php';
     require __DIR__ . '/views/table.php';
+    echo "</div>";
     exit;
 }
 
