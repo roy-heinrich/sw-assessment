@@ -8,6 +8,9 @@ $id = $isEdit ? (int)$booking['id'] : 0;
 $title = $isEdit ? "Edit Booking (#SW-" . str_pad((string)$id, 5, '0', STR_PAD_LEFT) . ")" : "New Booking";
 $actionUrl = $isEdit ? "?action=update&id={$id}" : "?action=store";
 
+// The form shows a fixed "+63" prefix; only the 10-digit local part is editable.
+$contactLocal = substr(preg_replace('/\D/', '', preg_replace('/^\s*\+63\s*/', '', (string)($booking['contact_number'] ?? ''))), 0, 10);
+
 $services = [
     'Airport Shuttle (Kalibo to Boracay)',
     'Airport Shuttle (Caticlan to Boracay)',
@@ -85,17 +88,21 @@ $services = [
 
                 <div>
                     <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">Contact Number *</label>
-                    <input 
-                        type="tel" 
-                        name="contact_number" 
-                        required 
-                        inputmode="tel"
-                        pattern="[0-9+()\s-]{7,20}"
-                        title="7–20 digits; may include +, spaces, ( ) or -"
-                        oninput="this.value = this.value.replace(/[^0-9+()\s-]/g, '')"
-                        placeholder="+63 917 123 4567"
-                        value="<?= htmlspecialchars((string)($booking['contact_number'] ?? '')) ?>"
-                        class="w-full px-3.5 py-2 text-sm rounded-lg border border-slate-300 dark:border-night-600 dark:bg-night-700 dark:text-slate-100 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition">
+                    <div class="flex">
+                        <span class="inline-flex items-center px-3.5 py-2 text-sm font-medium text-slate-500 dark:text-slate-400 bg-slate-100 dark:bg-night-700 border border-r-0 border-slate-300 dark:border-night-600 rounded-l-lg select-none">+63</span>
+                        <input 
+                            type="tel" 
+                            required 
+                            inputmode="numeric"
+                            maxlength="10"
+                            pattern="\d{10}"
+                            title="Exactly 10 digits for the PH number"
+                            oninput="var v = this.value.replace(/^\s*\+63\s*/, '').replace(/\D/g, '').slice(0, 10); this.value = v; document.getElementById('contact_number').value = '+63 ' + v;"
+                            placeholder="9171234567"
+                            value="<?= htmlspecialchars($contactLocal) ?>"
+                            class="w-full px-3.5 py-2 text-sm rounded-r-lg border border-slate-300 dark:border-night-600 dark:bg-night-700 dark:text-slate-100 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition">
+                    </div>
+                    <input type="hidden" name="contact_number" id="contact_number" value="+63 <?= htmlspecialchars($contactLocal) ?>">
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">

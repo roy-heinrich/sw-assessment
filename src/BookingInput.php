@@ -9,7 +9,8 @@ namespace App;
  */
 final class BookingInput
 {
-    private const CONTACT_PATTERN = '/^[0-9+()\s-]{7,20}$/';
+    // PH mobile: "+63" then exactly 10 digits (an optional space after +63 is allowed).
+    private const CONTACT_PATTERN = '/^\+63\s?\d{10}$/';
 
     /** Returns an error message, or null when the input is valid. */
     public static function validate(array $post): ?string
@@ -25,7 +26,7 @@ final class BookingInput
             return 'Please fill in all required fields.';
         }
         if (!preg_match(self::CONTACT_PATTERN, $contact)) {
-            return 'Please enter a valid contact number.';
+            return 'Please enter a valid contact number: +63 followed by 10 digits.';
         }
         // createFromFormat rolls invalid dates over (2026-02-30 -> 2026-03-02),
         // so compare the round-trip to reject them.
