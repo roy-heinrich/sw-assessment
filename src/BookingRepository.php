@@ -23,7 +23,12 @@ class BookingRepository
         if (!empty($search)) {
             $sql .= " AND (LOWER(first_name) LIKE :n1 ESCAPE '\\' OR LOWER(middle_name) LIKE :n2 ESCAPE '\\' OR LOWER(last_name) LIKE :n3 ESCAPE '\\' OR LOWER(pickup_point) LIKE :s1 ESCAPE '\\' OR LOWER(dropoff_point) LIKE :s2 ESCAPE '\\' OR LOWER(contact_number) LIKE :s3 ESCAPE '\\')";
             // Escape LIKE wildcards so a "%" or "_" typed by the user is matched literally.
-            $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], strtolower(trim($search)));
+            $searchClean = preg_replace('/\s+/', ' ', trim($search));
+            $lowered = strtolower($searchClean);
+            if (function_exists('mb_strtolower')) {
+                $lowered = mb_strtolower($searchClean, 'UTF-8');
+            }
+            $escaped = str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], $lowered);
             $term = '%' . $escaped . '%';
             $params[':n1'] = $term;
             $params[':n2'] = $term;
@@ -63,8 +68,9 @@ class BookingRepository
         return (int)$stmt->fetchColumn();
     }
 
-    public function getStats(): array
+    public function getStats(bool $archived = false): array
     {
+        $cond = $archived ? 'deleted_at IS NOT NULL' : 'deleted_at IS NULL';
         $stmt = $this->db->query("
             SELECT 
                 COUNT(*) as total,
@@ -72,7 +78,7 @@ class BookingRepository
                 SUM(CASE WHEN status = 'Pending' THEN 1 ELSE 0 END) as pending,
                 SUM(CASE WHEN status = 'Completed' THEN 1 ELSE 0 END) as completed
             FROM bookings
-            WHERE deleted_at IS NULL
+            WHERE {$cond}
         ");
         $row = $stmt->fetch(PDO::FETCH_ASSOC) ?: [];
         return [

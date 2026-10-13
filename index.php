@@ -65,33 +65,7 @@ $viewParams = array_filter([
 ]);
 $flashMessage = '';
 
-session_start();
 
-function csrf_token(): string
-{
-    if (empty($_SESSION['csrf_token'])) {
-        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-    }
-    return $_SESSION['csrf_token'];
-}
-
-function csrf_field(): string
-{
-    $token = csrf_token();
-    return '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($token, ENT_QUOTES | ENT_HTML5, 'UTF-8') . '">';
-}
-
-function verify_csrf(): bool
-{
-    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
-        return true;
-    }
-    $token = $_POST['csrf_token'] ?? ($_GET['csrf_token'] ?? '');
-    if (empty($_SESSION['csrf_token']) || !is_string($token)) {
-        return false;
-    }
-    return hash_equals($_SESSION['csrf_token'], $token);
-}
 
 $isHtmx = isset($_SERVER['HTTP_HX_REQUEST']) && $_SERVER['HTTP_HX_REQUEST'] === 'true';
 
@@ -160,10 +134,6 @@ try {
 
         case 'store':
             if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-                if (!verify_csrf()) {
-                    $flashMessage = 'Invalid request. Please try again.';
-                    break;
-                }
                 $error = BookingInput::validate($_POST);
                 if ($error === null) {
                     $guestName = GuestName::display($_POST);
@@ -178,10 +148,6 @@ try {
         case 'update':
             $id = (int)($_GET['id'] ?? 0);
             if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0) {
-                if (!verify_csrf()) {
-                    $flashMessage = 'Invalid request. Please try again.';
-                    break;
-                }
                 $ref = "Booking #SW-" . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
                 $error = BookingInput::validate($_POST);
                 if ($error !== null) {
@@ -197,10 +163,6 @@ try {
         case 'delete':
             $id = (int)($_GET['id'] ?? 0);
             if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0) {
-                if (!verify_csrf()) {
-                    $flashMessage = 'Invalid request. Please try again.';
-                    break;
-                }
                 $ref = "Booking #SW-" . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
                 $flashMessage = $repo->delete($id) ? "{$ref} removed." : "{$ref} not found.";
             }
@@ -209,10 +171,6 @@ try {
         case 'restore':
             $id = (int)($_GET['id'] ?? 0);
             if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0) {
-                if (!verify_csrf()) {
-                    $flashMessage = 'Invalid request. Please try again.';
-                    break;
-                }
                 $ref = "Booking #SW-" . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
                 $flashMessage = $repo->restore($id) ? "{$ref} restored." : "{$ref} not found.";
             }
@@ -221,10 +179,6 @@ try {
         case 'purge':
             $id = (int)($_GET['id'] ?? 0);
             if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0) {
-                if (!verify_csrf()) {
-                    $flashMessage = 'Invalid request. Please try again.';
-                    break;
-                }
                 $ref = "Booking #SW-" . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
                 $flashMessage = $repo->purge($id) ? "{$ref} permanently deleted." : "{$ref} not found.";
             }
@@ -235,10 +189,6 @@ try {
             // Desktop links put new_status in the query string; the mobile select posts it.
             $newStatus = (string)($_POST['new_status'] ?? $_GET['new_status'] ?? '');
             if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0 && $newStatus !== '') {
-                if (!verify_csrf()) {
-                    $flashMessage = 'Invalid request. Please try again.';
-                    break;
-                }
                 $flashMessage = $repo->updateStatus($id, $newStatus)
                     ? "Status updated to {$newStatus}."
                     : "Could not update status.";
@@ -260,12 +210,12 @@ try {
     $flashMessage = 'Something went wrong. Please try again.';
 }
 
-$perPage = 5;
+$perPage = 10;
 $total = $repo->countAll($search, $statusFilter, $showArchived);
 $totalPages = max(1, (int)ceil($total / $perPage));
 $page = min(max(1, (int)($_GET['page'] ?? 1)), $totalPages);
 $bookings = $repo->getAll($search, $statusFilter, $showArchived, $perPage, ($page - 1) * $perPage);
-$stats = $repo->getStats();
+$stats = $repo->getStats($showArchived);
 
 if ($isHtmx) {
     $oob = true;

@@ -125,8 +125,7 @@ $query = function (array $params) use ($search, $statusFilter, $showArchived): s
                             <td data-label="Status" class="py-2.5 px-3 text-center before:font-sans before:text-[10px] before:uppercase before:tracking-wider before:text-slate-400 dark:before:text-slate-500">
                                 <?php if (empty($b['deleted_at'])): ?>
                                     <form hx-post="?action=quick_status&id=<?= (int)$b['id'] ?>&page=<?= $page ?>" hx-target="#main-content" hx-swap="innerHTML" class="inline">
-                                        <?= csrf_field() ?>
-                                        <select
+                                                                                <select
                                             name="new_status"
                                             onchange="this.form.submit()"
                                             class="text-xs font-medium rounded-lg border border-slate-200 dark:border-night-600 bg-white dark:bg-night-700 text-slate-700 dark:text-slate-200 py-1 pl-2 pr-7 focus:outline-none focus:ring-2 focus:ring-teal-500">

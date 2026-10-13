@@ -47,10 +47,10 @@ $services = [
                 hx-post="<?= $actionUrl ?>" 
                 hx-target="#main-content" 
                 hx-swap="innerHTML"
+                
                 hx-on::after-request="if(event.detail.successful) document.getElementById('modal-container').innerHTML = '';"
                 class="px-6 py-5 space-y-4">
-                <?= csrf_field() ?>
-
+                
                 <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
                         <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">First Name *</label>

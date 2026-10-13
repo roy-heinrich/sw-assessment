@@ -85,9 +85,6 @@ class Database
      * Brings an existing database up to date. Runs one cheap catalog query and only
      * writes when something is missing, so a fully provisioned database costs one
      * round trip per request and no locks.
-     *
-     * shortcut: the catalog query runs on every request; if cold-start latency ever
-     * matters, move migrations to a deploy step and delete this call.
      */
     private static function ensureSchema(PDO $pdo, string $driver): void
     {

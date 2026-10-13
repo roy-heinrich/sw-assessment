@@ -68,10 +68,10 @@ $actionQuery = http_build_query(($viewParams ?? []) + ['action' => $confirmActio
                 hx-post="?<?= $actionQuery ?>"
                 hx-target="#main-content"
                 hx-swap="innerHTML"
+                
                 hx-on::after-request="if(event.detail.successful) document.getElementById('modal-container').innerHTML = '';"
                 class="px-6 py-5">
-                <?= csrf_field() ?>
-
+                
                 <p class="text-sm text-slate-600 dark:text-slate-300">
                     <?php if ($mode === 'purge'): ?>
                         Permanently delete the booking for
