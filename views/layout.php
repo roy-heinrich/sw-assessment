@@ -23,41 +23,11 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-        tailwind.config = {
-            darkMode: 'class',
-            theme: {
-                extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                    },
-                    colors: {
-                        teal: {
-                            50: '#f0fdfa',
-                            100: '#ccfbf1',
-                            500: '#14b8a6',
-                            600: '#0d9488',
-                            700: '#0f766e',
-                            800: '#115e59',
-                            900: '#134e4a',
-                        },
-                        // Soft dark surfaces (not pure black) for dark mode.
-                        night: {
-                            900: '#14181e',
-                            800: '#242b33',
-                            700: '#2c343d',
-                            600: '#3b444f',
-                        }
-                    }
-                }
-            }
-        }
-    </script>
-
-    <script src="https://unpkg.com/htmx.org@1.9.12"></script>
+    <!-- Prebuilt Tailwind (npm run build:css), inlined below so it always loads with the page. -->
+    <script src="https://unpkg.com/htmx.org@1.9.12" integrity="sha384-ujb1lZYygJmzgSwoxRggbCHcjc0rB2XoQrxeTUQyRjrOnlCoYta87iKBWq3EsdM2" crossorigin="anonymous"></script>
 
     <style>
+        <?php readfile(dirname(__DIR__) . '/assets/tailwind.css'); ?>
         html.dark {
             color-scheme: dark;
             background-color: #14181e;
@@ -108,6 +78,30 @@
         .toast {
             animation: toastIn 200ms ease-out;
         }
+        /* Click-to-wait feedback: dims the control and swaps its content for a spinner. */
+        .is-loading {
+            position: relative;
+            pointer-events: none;
+        }
+        .is-loading > * {
+            visibility: hidden;
+        }
+        .is-loading::after {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 1em;
+            height: 1em;
+            margin: -0.5em 0 0 -0.5em;
+            border: 2px solid currentColor;
+            border-right-color: transparent;
+            border-radius: 9999px;
+            animation: spin 0.6s linear infinite;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
     </style>
 </head>
 <body hx-indicator="#global-progress" onkeydown="if(event.key === 'Escape') { const m = document.getElementById('modal-container'); if(m) m.innerHTML = ''; }" class="h-full text-slate-800 dark:text-slate-200 antialiased flex flex-col font-sans selection:bg-teal-500 selection:text-white">
@@ -131,6 +125,36 @@
         })();
     </script>
 
+    <script>
+        // Click feedback: show a spinner on the control that started the action so the
+        // user sees the click registered. htmx controls wait for beforeRequest so that
+        // hx-confirm dialogs don't spin the button before the user has confirmed.
+        (function () {
+            function setLoading(el) {
+                el.classList.add('is-loading');
+                el.setAttribute('aria-busy', 'true');
+            }
+            function clearLoading() {
+                document.querySelectorAll('.is-loading').forEach(function (el) {
+                    el.classList.remove('is-loading');
+                    el.removeAttribute('aria-busy');
+                });
+            }
+            document.addEventListener('click', function (e) {
+                if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+                if (!e.target.closest) return;
+                var el = e.target.closest('a[href]:not([href^="#"]):not([href^="javascript:"])');
+                if (!el || el.hasAttribute('hx-get') || el.hasAttribute('hx-post')) return;
+                setLoading(el);
+            });
+            document.addEventListener('htmx:beforeRequest', function (e) {
+                var el = e.detail.elt;
+                if (el && el.matches && el.matches('button, a')) setLoading(el);
+            });
+            document.addEventListener('htmx:afterRequest', clearLoading);
+        })();
+    </script>
+
     <header class="bg-white dark:bg-night-800 border-b border-slate-200/80 dark:border-night-600 sticky top-0 z-40 shadow-sm">
         <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
             <div class="flex items-center justify-between h-16">
@@ -139,10 +163,7 @@
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8"/></svg>
                     </div>
                     <div>
-                        <div class="flex items-center gap-2">
-                            <span class="font-bold text-slate-900 dark:text-slate-100 tracking-tight text-lg">Southwest Tours</span>
-                            <span class="text-[10px] font-semibold bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-300 px-2 py-0.5 rounded-full border border-teal-200/60 dark:border-teal-500/30 uppercase tracking-wider">Boracay</span>
-                        </div>
+                        <span class="font-bold text-slate-900 dark:text-slate-100 tracking-tight text-lg">Southwest Tours</span>
                         <p class="text-xs text-slate-500 dark:text-slate-400 hidden sm:block">Passenger Transfer & Dispatch Manifest</p>
                     </div>
                 </div>
@@ -221,9 +242,11 @@
                 <a
                     href="?<?= $showArchived ? '' : 'show=archived' ?>"
                     title="<?= $showArchived ? 'Back to active bookings' : 'View archived bookings' ?>"
-                    class="inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-xl border border-slate-200 dark:border-night-600 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-50 dark:hover:bg-night-700 transition">
-                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4"/></svg>
-                    <span class="hidden sm:inline"><?= $showArchived ? 'Active' : 'Archive' ?></span>
+                    class="inline-flex items-center gap-1.5 px-3 py-2.5 text-sm font-medium rounded-xl border transition <?= $showArchived
+                        ? 'border-teal-200 dark:border-teal-500/30 bg-teal-50 dark:bg-teal-500/10 text-teal-700 dark:text-teal-300 hover:bg-teal-100 dark:hover:bg-teal-500/20'
+                        : 'border-slate-200 dark:border-night-600 text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-slate-100 hover:bg-slate-50 dark:hover:bg-night-700' ?>">
+                    <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="<?= $showArchived ? 'M10 19l-7-7m0 0l7-7m-7 7h18' : 'M5 8h14M5 8a2 2 0 110-4h14a2 2 0 110 4M5 8v10a2 2 0 002 2h10a2 2 0 002-2V8m-9 4h4' ?>"/></svg>
+                    <span class="hidden sm:inline"><?= $showArchived ? 'Back to Active' : 'Archive' ?></span>
                 </a>
 
                 <a 
@@ -236,35 +259,6 @@
         </div>
 
         <div id="main-content" class="transition-all duration-200">
-            <!-- Skeleton shown automatically during HTMX requests -->
-            <div id="skeleton-loading" class="hidden space-y-6 animate-pulse">
-                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                    <?php for ($i = 0; $i < 4; $i++): ?>
-                        <div class="bg-white dark:bg-night-800 p-4 rounded-xl border border-slate-200/80 dark:border-night-600 shadow-sm flex items-center justify-between">
-                            <div class="space-y-2 flex-1">
-                                <div class="h-3 bg-slate-200 dark:bg-night-600 rounded w-20"></div>
-                                <div class="h-6 bg-slate-200 dark:bg-night-600 rounded w-12"></div>
-                            </div>
-                            <div class="w-10 h-10 bg-slate-100 dark:bg-night-700 rounded-lg"></div>
-                        </div>
-                    <?php endfor; ?>
-                </div>
-
-                <div class="bg-white dark:bg-night-800 rounded-xl shadow-sm border border-slate-200 dark:border-night-600 p-4 space-y-4">
-                    <div class="h-5 bg-slate-200 dark:bg-night-600 rounded w-1/4 mb-4"></div>
-                    <?php for ($i = 0; $i < 4; $i++): ?>
-                        <div class="flex items-center justify-between py-3 border-b border-slate-100 dark:border-night-700 last:border-0 gap-4">
-                            <div class="h-4 bg-slate-200 dark:bg-night-600 rounded w-20"></div>
-                            <div class="h-4 bg-slate-200 dark:bg-night-600 rounded w-32"></div>
-                            <div class="h-4 bg-slate-200 dark:bg-night-600 rounded w-48"></div>
-                            <div class="h-4 bg-slate-200 dark:bg-night-600 rounded w-16"></div>
-                            <div class="h-6 bg-slate-200 dark:bg-night-600 rounded-full w-20"></div>
-                            <div class="h-4 bg-slate-200 dark:bg-night-600 rounded w-12"></div>
-                        </div>
-                    <?php endfor; ?>
-                </div>
-            </div>
-
             <div id="manifest-data">
                 <?php require __DIR__ . '/stats.php'; ?>
                 <?php require __DIR__ . '/table.php'; ?>

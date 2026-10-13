@@ -49,28 +49,53 @@ $services = [
                 hx-swap="innerHTML"
                 hx-on::after-request="if(event.detail.successful) document.getElementById('modal-container').innerHTML = '';"
                 class="px-6 py-5 space-y-4">
+                <?= csrf_field() ?>
 
-                <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div>
-                        <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">Guest Name *</label>
+                        <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">First Name *</label>
                         <input 
                             type="text" 
-                            name="guest_name" 
+                            name="first_name" 
                             required 
-                            placeholder="Juan Dela Cruz"
-                            value="<?= htmlspecialchars((string)($booking['guest_name'] ?? '')) ?>"
+                            placeholder="Juan"
+                            value="<?= htmlspecialchars((string)($booking['first_name'] ?? '')) ?>"
                             class="w-full px-3.5 py-2 text-sm rounded-lg border border-slate-300 dark:border-night-600 dark:bg-night-700 dark:text-slate-100 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition">
                     </div>
                     <div>
-                        <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">Contact Number *</label>
+                        <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">Middle Name</label>
                         <input 
                             type="text" 
-                            name="contact_number" 
-                            required 
-                            placeholder="+63 917 123 4567"
-                            value="<?= htmlspecialchars((string)($booking['contact_number'] ?? '')) ?>"
+                            name="middle_name" 
+                            placeholder="Santos"
+                            value="<?= htmlspecialchars((string)($booking['middle_name'] ?? '')) ?>"
                             class="w-full px-3.5 py-2 text-sm rounded-lg border border-slate-300 dark:border-night-600 dark:bg-night-700 dark:text-slate-100 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition">
                     </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">Last Name *</label>
+                        <input 
+                            type="text" 
+                            name="last_name" 
+                            required 
+                            placeholder="Dela Cruz"
+                            value="<?= htmlspecialchars((string)($booking['last_name'] ?? '')) ?>"
+                            class="w-full px-3.5 py-2 text-sm rounded-lg border border-slate-300 dark:border-night-600 dark:bg-night-700 dark:text-slate-100 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition">
+                    </div>
+                </div>
+
+                <div>
+                    <label class="block text-xs font-semibold text-slate-700 dark:text-slate-300 uppercase tracking-wider mb-1">Contact Number *</label>
+                    <input 
+                        type="tel" 
+                        name="contact_number" 
+                        required 
+                        inputmode="tel"
+                        pattern="[0-9+()\s-]{7,20}"
+                        title="7–20 digits; may include +, spaces, ( ) or -"
+                        oninput="this.value = this.value.replace(/[^0-9+()\s-]/g, '')"
+                        placeholder="+63 917 123 4567"
+                        value="<?= htmlspecialchars((string)($booking['contact_number'] ?? '')) ?>"
+                        class="w-full px-3.5 py-2 text-sm rounded-lg border border-slate-300 dark:border-night-600 dark:bg-night-700 dark:text-slate-100 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition">
                 </div>
 
                 <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -156,7 +181,9 @@ $services = [
                         class="w-full px-3.5 py-2 text-sm rounded-lg border border-slate-300 dark:border-night-600 dark:bg-night-700 dark:text-slate-100 dark:placeholder:text-slate-500 focus:outline-none focus:ring-2 focus:ring-teal-500 focus:border-transparent transition"><?= htmlspecialchars((string)($booking['notes'] ?? '')) ?></textarea>
                 </div>
 
-                <div class="pt-3 border-t border-slate-200 dark:border-night-600 flex items-center justify-end gap-3">
+                <div class="pt-3 border-t border-slate-200 dark:border-night-600 flex flex-col-reverse sm:flex-row sm:items-center sm:justify-between gap-3">
+                    <p class="text-xs text-slate-500 dark:text-slate-400"><span class="text-rose-500">*</span> All fields marked are required</p>
+                    <div class="flex items-center gap-3">
                     <button 
                         type="button" 
                         onclick="document.getElementById('modal-container').innerHTML = ''"
@@ -168,6 +195,7 @@ $services = [
                         class="inline-flex items-center px-5 py-2 text-sm font-medium text-white bg-teal-600 hover:bg-teal-700 active:bg-teal-800 rounded-lg shadow-sm transition">
                         <?= $isEdit ? 'Save Changes' : 'Create Booking' ?>
                     </button>
+                    </div>
                 </div>
             </form>
         </div>

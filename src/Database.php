@@ -8,7 +8,8 @@ use PDO;
 class Database
 {
     private static ?PDO $instance = null;
-    private static bool $schemaInitialized = false;
+    private static bool $schemaEnsured = false;
+    private static bool $schemaChecked = false;
 
     public static function getConnection(): PDO
     {
@@ -17,28 +18,38 @@ class Database
         }
 
         $databaseUrl = getenv('DATABASE_URL') ?: ($_ENV['DATABASE_URL'] ?? '');
+        $autoSchema = strtolower((string)(getenv('APP_AUTO_SCHEMA') ?: ($_ENV['APP_AUTO_SCHEMA'] ?? 'true')));
+        if ($autoSchema === '0' || $autoSchema === 'false' || $autoSchema === 'off') {
+            $autoSchema = false;
+        } else {
+            $autoSchema = true;
+        }
+
         if ($databaseUrl) {
             self::$instance = self::connectNeonUrl($databaseUrl);
-            self::ensureSoftDeleteColumn(self::$instance, 'pgsql');
+            if ($autoSchema && !self::$schemaChecked) {
+                self::ensureSchema(self::$instance, 'pgsql');
+                self::$schemaChecked = true;
+            }
         } else {
-            $dbPath = sys_get_temp_dir() . '/southwest_tours.sqlite';
+            if (getenv('VERCEL')) {
+                // A missing env var must fail loudly, not silently use throwaway storage.
+                throw new \RuntimeException('DATABASE_URL is required in production.');
+            }
+            $dbPath = getenv('SQLITE_PATH') ?: sys_get_temp_dir() . '/southwest_tours.sqlite';
             self::$instance = new PDO("sqlite:{$dbPath}", null, null, [
                 PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION,
                 PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
             ]);
-            if (!self::$schemaInitialized) {
+            if ($autoSchema && !self::$schemaEnsured) {
                 self::initSchema(self::$instance);
-                self::ensureSoftDeleteColumn(self::$instance, 'sqlite');
-                self::$schemaInitialized = true;
+                self::ensureSchema(self::$instance, 'sqlite');
+                self::$schemaEnsured = true;
+                self::$schemaChecked = true;
             }
         }
 
         return self::$instance;
-    }
-
-    public static function getDriverName(): string
-    {
-        return self::getConnection()->getAttribute(PDO::ATTR_DRIVER_NAME) ?? 'unknown';
     }
 
     private static function connectNeonUrl(string $url): PDO
@@ -71,29 +82,89 @@ class Database
     }
 
     /**
-     * Soft delete was added after the table already existed, and CREATE TABLE IF NOT EXISTS
-     * will not add a column to an existing table. Patch it in; safe and cheap to repeat.
+     * Brings an existing database up to date. Runs one cheap catalog query and only
+     * writes when something is missing, so a fully provisioned database costs one
+     * round trip per request and no locks.
+     *
+     * shortcut: the catalog query runs on every request; if cold-start latency ever
+     * matters, move migrations to a deploy step and delete this call.
      */
-    private static function ensureSoftDeleteColumn(PDO $pdo, string $driver): void
+    private static function ensureSchema(PDO $pdo, string $driver): void
     {
-        if ($driver === 'pgsql') {
-            // A read avoids taking a write lock on every request the way ALTER ... IF NOT EXISTS would.
-            $exists = $pdo->query(
-                "SELECT 1 FROM information_schema.columns WHERE table_name = 'bookings' AND column_name = 'deleted_at'"
-            )->fetchColumn();
-            if (!$exists) {
-                $pdo->exec("ALTER TABLE bookings ADD COLUMN deleted_at TIMESTAMP NULL");
+        if ($driver === 'sqlite') {
+            // SQLite has no ADD COLUMN IF NOT EXISTS, so read the current columns first.
+            $columns = [];
+            foreach ($pdo->query("PRAGMA table_info(bookings)")->fetchAll(PDO::FETCH_ASSOC) as $col) {
+                $columns[$col['name'] ?? ''] = true;
+            }
+            if (!isset($columns['deleted_at'])) {
+                $pdo->exec("ALTER TABLE bookings ADD COLUMN deleted_at TEXT NULL");
+            }
+            if (!isset($columns['first_name']) && isset($columns['guest_name'])) {
+                self::migrateGuestName($pdo, $driver);
             }
             return;
         }
 
-        // SQLite has no ADD COLUMN IF NOT EXISTS, so check first.
-        foreach ($pdo->query("PRAGMA table_info(bookings)")->fetchAll(PDO::FETCH_ASSOC) as $col) {
-            if (($col['name'] ?? '') === 'deleted_at') {
-                return;
-            }
+        $row = $pdo->query("
+            SELECT
+                to_regclass('public.bookings') IS NOT NULL AS has_table,
+                EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'bookings' AND column_name = 'deleted_at') AS has_deleted_at,
+                EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'bookings' AND column_name = 'first_name') AS has_first_name,
+                EXISTS (SELECT 1 FROM information_schema.columns
+                        WHERE table_name = 'bookings' AND column_name = 'guest_name') AS has_guest_name,
+                (SELECT COUNT(*) FROM pg_indexes
+                 WHERE tablename = 'bookings'
+                   AND indexname IN ('idx_bookings_deleted_at', 'idx_bookings_status')) AS index_count
+        ")->fetch(PDO::FETCH_ASSOC);
+
+        if (empty($row['has_table'])) {
+            self::initSchema($pdo);
+            return;
         }
-        $pdo->exec("ALTER TABLE bookings ADD COLUMN deleted_at TEXT NULL");
+        if (empty($row['has_deleted_at'])) {
+            $pdo->exec("ALTER TABLE bookings ADD COLUMN deleted_at TIMESTAMP NULL");
+        }
+        if (empty($row['has_first_name']) && !empty($row['has_guest_name'])) {
+            self::migrateGuestName($pdo, $driver);
+        }
+        if ((int)($row['index_count'] ?? 0) < 2) {
+            self::createIndexes($pdo);
+        }
+    }
+
+    /**
+     * Splits the old single "guest_name" column into first/middle/last, then drops it.
+     * The split is best effort: first word, last word, everything else in the middle.
+     */
+    private static function migrateGuestName(PDO $pdo, string $driver): void
+    {
+        if ($driver === 'pgsql') {
+            $pdo->exec("ALTER TABLE bookings ADD COLUMN first_name VARCHAR(255) NOT NULL DEFAULT ''");
+            $pdo->exec("ALTER TABLE bookings ADD COLUMN middle_name VARCHAR(255) NULL");
+            $pdo->exec("ALTER TABLE bookings ADD COLUMN last_name VARCHAR(255) NOT NULL DEFAULT ''");
+        } else {
+            $pdo->exec("ALTER TABLE bookings ADD COLUMN first_name TEXT NOT NULL DEFAULT ''");
+            $pdo->exec("ALTER TABLE bookings ADD COLUMN middle_name TEXT NULL");
+            $pdo->exec("ALTER TABLE bookings ADD COLUMN last_name TEXT NOT NULL DEFAULT ''");
+        }
+
+        $rows = $pdo->query("SELECT id, guest_name FROM bookings")->fetchAll(PDO::FETCH_ASSOC);
+        $update = $pdo->prepare("UPDATE bookings SET first_name = :first, middle_name = :middle, last_name = :last WHERE id = :id");
+        foreach ($rows as $row) {
+            $parts = preg_split('/\s+/', trim((string)$row['guest_name']), -1, PREG_SPLIT_NO_EMPTY) ?: [];
+            $last = count($parts) > 1 ? (string)array_pop($parts) : '';
+            $update->execute([
+                ':first' => $parts[0] ?? '',
+                ':middle' => implode(' ', array_slice($parts, 1)) ?: null,
+                ':last' => $last,
+                ':id' => $row['id'],
+            ]);
+        }
+
+        $pdo->exec("ALTER TABLE bookings DROP COLUMN guest_name");
     }
 
     private static function initSchema(PDO $pdo): void
@@ -104,7 +175,9 @@ class Database
             $sql = "
                 CREATE TABLE IF NOT EXISTS bookings (
                     id SERIAL PRIMARY KEY,
-                    guest_name VARCHAR(255) NOT NULL,
+                    first_name VARCHAR(255) NOT NULL,
+                    middle_name VARCHAR(255) NULL,
+                    last_name VARCHAR(255) NOT NULL,
                     contact_number VARCHAR(50) NOT NULL,
                     service_type VARCHAR(100) NOT NULL,
                     pickup_point VARCHAR(255) NOT NULL,
@@ -121,7 +194,9 @@ class Database
             $sql = "
                 CREATE TABLE IF NOT EXISTS bookings (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    guest_name TEXT NOT NULL,
+                    first_name TEXT NOT NULL,
+                    middle_name TEXT NULL,
+                    last_name TEXT NOT NULL,
                     contact_number TEXT NOT NULL,
                     service_type TEXT NOT NULL,
                     pickup_point TEXT NOT NULL,
@@ -137,5 +212,12 @@ class Database
         }
 
         $pdo->exec($sql);
+        self::createIndexes($pdo);
+    }
+
+    private static function createIndexes(PDO $pdo): void
+    {
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_bookings_deleted_at ON bookings (deleted_at)");
+        $pdo->exec("CREATE INDEX IF NOT EXISTS idx_bookings_status ON bookings (status)");
     }
 }

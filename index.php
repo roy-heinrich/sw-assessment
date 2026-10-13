@@ -1,6 +1,11 @@
 <?php
 declare(strict_types=1);
 
+// The company and its bookings are in the Philippines; default dates must match that day.
+date_default_timezone_set('Asia/Manila');
+// Never print stack traces to visitors; failures are logged in the catch below.
+ini_set('display_errors', '0');
+
 $envFile = __DIR__ . '/.env';
 if (file_exists($envFile)) {
     $lines = file($envFile, FILE_IGNORE_NEW_LINES | FILE_SKIP_EMPTY_LINES);
@@ -13,7 +18,10 @@ if (file_exists($envFile)) {
             if (str_contains($line, '=')) {
                 [$key, $val] = explode('=', $line, 2);
                 $key = trim($key);
-                $val = trim($val, " \t\n\r\0\x0B\"'");
+                $val = trim($val);
+                if ((str_starts_with($val, '"') && str_ends_with($val, '"')) || (str_starts_with($val, "'") && str_ends_with($val, "'"))) {
+                    $val = substr($val, 1, -1);
+                }
                 putenv("{$key}={$val}");
                 $_ENV[$key] = $val;
                 $_SERVER[$key] = $val;
@@ -40,13 +48,50 @@ spl_autoload_register(function (string $class) {
     }
 });
 
+use App\BookingInput;
 use App\BookingRepository;
+use App\GuestName;
 
 $action = $_GET['action'] ?? 'index';
 $search = trim($_GET['search'] ?? '');
 $statusFilter = trim($_GET['status'] ?? '');
 $showArchived = ($_GET['show'] ?? '') === 'archived';
+// Current list view; the confirm modal re-posts these so the swap keeps the same view
+// (otherwise restoring/purging from the archive would jump back to the active list).
+$viewParams = array_filter([
+    'search' => $search,
+    'status' => $statusFilter,
+    'show' => $showArchived ? 'archived' : '',
+]);
 $flashMessage = '';
+
+session_start();
+
+function csrf_token(): string
+{
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    return $_SESSION['csrf_token'];
+}
+
+function csrf_field(): string
+{
+    $token = csrf_token();
+    return '<input type="hidden" name="csrf_token" value="' . htmlspecialchars($token, ENT_QUOTES | ENT_HTML5, 'UTF-8') . '">';
+}
+
+function verify_csrf(): bool
+{
+    if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+        return true;
+    }
+    $token = $_POST['csrf_token'] ?? ($_GET['csrf_token'] ?? '');
+    if (empty($_SESSION['csrf_token']) || !is_string($token)) {
+        return false;
+    }
+    return hash_equals($_SESSION['csrf_token'], $token);
+}
 
 $isHtmx = isset($_SERVER['HTTP_HX_REQUEST']) && $_SERVER['HTTP_HX_REQUEST'] === 'true';
 
@@ -60,115 +105,171 @@ if ($action === 'create_form') {
 
 $repo = new BookingRepository();
 
-switch ($action) {
-    case 'edit_form':
-        $id = (int)($_GET['id'] ?? 0);
-        $booking = $repo->find($id);
-        if (!$booking) {
-            http_response_code(404);
-            echo "<div class='p-4 text-rose-600 dark:text-rose-300 bg-rose-50 dark:bg-rose-500/10 rounded-lg'>Booking not found.</div>";
+try {
+    switch ($action) {
+        case 'edit_form':
+            $id = (int)($_GET['id'] ?? 0);
+            $booking = $repo->find($id);
+            if (!$booking) {
+                http_response_code(404);
+                echo "<div class='p-4 text-rose-600 dark:text-rose-300 bg-rose-50 dark:bg-rose-500/10 rounded-lg'>Booking not found.</div>";
+                exit;
+            }
+            $mode = 'edit';
+            require __DIR__ . '/views/form_modal.php';
             exit;
-        }
-        $mode = 'edit';
-        require __DIR__ . '/views/form_modal.php';
-        exit;
 
-    case 'store':
-        if ($_SERVER['REQUEST_METHOD'] === 'POST') {
-            $guestName = trim($_POST['guest_name'] ?? '');
-            $contact = trim($_POST['contact_number'] ?? '');
-            $pickup = trim($_POST['pickup_point'] ?? '');
-            $dropoff = trim($_POST['dropoff_point'] ?? '');
-
-            if (!empty($guestName) && !empty($contact) && !empty($pickup) && !empty($dropoff)) {
-                $repo->create($_POST);
-                $flashMessage = "Booking for {$guestName} created successfully.";
-            } else {
-                $flashMessage = "Please fill in all required fields.";
+        case 'delete_form':
+            $id = (int)($_GET['id'] ?? 0);
+            $booking = $repo->find($id);
+            if (!$booking) {
+                http_response_code(404);
+                echo "<div class='p-4 text-rose-600 dark:text-rose-300 bg-rose-50 dark:bg-rose-500/10 rounded-lg'>Booking not found.</div>";
+                exit;
             }
-        }
-        break;
+            $page = max(1, (int)($_GET['page'] ?? 1));
+            $mode = 'archive';
+            require __DIR__ . '/views/confirm_modal.php';
+            exit;
 
-    case 'update':
-        $id = (int)($_GET['id'] ?? 0);
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0) {
-            $guestName = trim($_POST['guest_name'] ?? '');
-            $contact = trim($_POST['contact_number'] ?? '');
-            $pickup = trim($_POST['pickup_point'] ?? '');
-            $dropoff = trim($_POST['dropoff_point'] ?? '');
-
-            if (!empty($guestName) && !empty($contact) && !empty($pickup) && !empty($dropoff)) {
-                $repo->update($id, $_POST);
-                $flashMessage = "Booking #SW-" . str_pad((string)$id, 5, '0', STR_PAD_LEFT) . " updated.";
-            } else {
-                $flashMessage = "Update failed: missing required fields.";
+        case 'purge_form':
+            $id = (int)($_GET['id'] ?? 0);
+            $booking = $repo->find($id, true);
+            if (!$booking) {
+                http_response_code(404);
+                echo "<div class='p-4 text-rose-600 dark:text-rose-300 bg-rose-50 dark:bg-rose-500/10 rounded-lg'>Archived booking not found.</div>";
+                exit;
             }
-        }
-        break;
+            $page = max(1, (int)($_GET['page'] ?? 1));
+            $mode = 'purge';
+            require __DIR__ . '/views/confirm_modal.php';
+            exit;
 
-    case 'delete':
-        $id = (int)($_GET['id'] ?? 0);
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0) {
-            $repo->delete($id);
-            $flashMessage = "Booking #SW-" . str_pad((string)$id, 5, '0', STR_PAD_LEFT) . " removed.";
-        }
-        break;
+        case 'restore_form':
+            $id = (int)($_GET['id'] ?? 0);
+            $booking = $repo->find($id, true);
+            if (!$booking) {
+                http_response_code(404);
+                echo "<div class='p-4 text-rose-600 dark:text-rose-300 bg-rose-50 dark:bg-rose-500/10 rounded-lg'>Archived booking not found.</div>";
+                exit;
+            }
+            $page = max(1, (int)($_GET['page'] ?? 1));
+            $mode = 'restore';
+            require __DIR__ . '/views/confirm_modal.php';
+            exit;
 
-    case 'restore':
-        $id = (int)($_GET['id'] ?? 0);
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0) {
-            $repo->restore($id);
-            $flashMessage = "Booking #SW-" . str_pad((string)$id, 5, '0', STR_PAD_LEFT) . " restored.";
-        }
-        break;
+        case 'store':
+            if ($_SERVER['REQUEST_METHOD'] === 'POST') {
+                if (!verify_csrf()) {
+                    $flashMessage = 'Invalid request. Please try again.';
+                    break;
+                }
+                $error = BookingInput::validate($_POST);
+                if ($error === null) {
+                    $guestName = GuestName::display($_POST);
+                    $repo->create($_POST);
+                    $flashMessage = "Booking for {$guestName} created successfully.";
+                } else {
+                    $flashMessage = $error;
+                }
+            }
+            break;
 
-    case 'quick_status':
-        $id = (int)($_GET['id'] ?? 0);
-        $newStatus = (string)($_GET['new_status'] ?? '');
-        if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0 && !empty($newStatus)) {
-            $repo->updateStatus($id, $newStatus);
-            $flashMessage = "Status updated to {$newStatus}.";
-        }
-        break;
+        case 'update':
+            $id = (int)($_GET['id'] ?? 0);
+            if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0) {
+                if (!verify_csrf()) {
+                    $flashMessage = 'Invalid request. Please try again.';
+                    break;
+                }
+                $ref = "Booking #SW-" . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
+                $error = BookingInput::validate($_POST);
+                if ($error !== null) {
+                    $flashMessage = $error;
+                } elseif ($repo->update($id, $_POST)) {
+                    $flashMessage = "{$ref} updated.";
+                } else {
+                    $flashMessage = "{$ref} could not be updated; it may have been removed.";
+                }
+            }
+            break;
 
-    case 'search':
-    case 'filter':
-    case 'index':
-    default:
-        break;
+        case 'delete':
+            $id = (int)($_GET['id'] ?? 0);
+            if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0) {
+                if (!verify_csrf()) {
+                    $flashMessage = 'Invalid request. Please try again.';
+                    break;
+                }
+                $ref = "Booking #SW-" . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
+                $flashMessage = $repo->delete($id) ? "{$ref} removed." : "{$ref} not found.";
+            }
+            break;
+
+        case 'restore':
+            $id = (int)($_GET['id'] ?? 0);
+            if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0) {
+                if (!verify_csrf()) {
+                    $flashMessage = 'Invalid request. Please try again.';
+                    break;
+                }
+                $ref = "Booking #SW-" . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
+                $flashMessage = $repo->restore($id) ? "{$ref} restored." : "{$ref} not found.";
+            }
+            break;
+
+        case 'purge':
+            $id = (int)($_GET['id'] ?? 0);
+            if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0) {
+                if (!verify_csrf()) {
+                    $flashMessage = 'Invalid request. Please try again.';
+                    break;
+                }
+                $ref = "Booking #SW-" . str_pad((string)$id, 5, '0', STR_PAD_LEFT);
+                $flashMessage = $repo->purge($id) ? "{$ref} permanently deleted." : "{$ref} not found.";
+            }
+            break;
+
+        case 'quick_status':
+            $id = (int)($_GET['id'] ?? 0);
+            // Desktop links put new_status in the query string; the mobile select posts it.
+            $newStatus = (string)($_POST['new_status'] ?? $_GET['new_status'] ?? '');
+            if ($_SERVER['REQUEST_METHOD'] === 'POST' && $id > 0 && $newStatus !== '') {
+                if (!verify_csrf()) {
+                    $flashMessage = 'Invalid request. Please try again.';
+                    break;
+                }
+                $flashMessage = $repo->updateStatus($id, $newStatus)
+                    ? "Status updated to {$newStatus}."
+                    : "Could not update status.";
+            }
+            break;
+
+        case 'search':
+        case 'filter':
+        case 'index':
+        default:
+            break;
+    }
+} catch (\Throwable $e) {
+    error_log('Booking action failed: ' . $e->getMessage());
+    // htmx only swaps 2xx responses, so an htmx error must render as 200 to show the toast.
+    if (!$isHtmx) {
+        http_response_code(500);
+    }
+    $flashMessage = 'Something went wrong. Please try again.';
 }
 
-$bookings = $repo->getAll($search, $statusFilter, $showArchived);
+$perPage = 5;
+$total = $repo->countAll($search, $statusFilter, $showArchived);
+$totalPages = max(1, (int)ceil($total / $perPage));
+$page = min(max(1, (int)($_GET['page'] ?? 1)), $totalPages);
+$bookings = $repo->getAll($search, $statusFilter, $showArchived, $perPage, ($page - 1) * $perPage);
 $stats = $repo->getStats();
 
 if ($isHtmx) {
     $oob = true;
     require __DIR__ . '/views/flash.php';
-    echo "<div id='skeleton-loading' class='hidden space-y-6 animate-pulse'>
-            <div class='grid grid-cols-2 md:grid-cols-4 gap-4 mb-6'>";
-    for ($i = 0; $i < 4; $i++) {
-        echo "<div class='bg-white dark:bg-night-800 p-4 rounded-xl border border-slate-200/80 dark:border-night-600 shadow-sm flex items-center justify-between'>
-                <div class='space-y-2 flex-1'>
-                    <div class='h-3 bg-slate-200 dark:bg-night-600 rounded w-20'></div>
-                    <div class='h-6 bg-slate-200 dark:bg-night-600 rounded w-12'></div>
-                </div>
-                <div class='w-10 h-10 bg-slate-100 dark:bg-night-700 rounded-lg'></div>
-              </div>";
-    }
-    echo "</div>
-          <div class='bg-white dark:bg-night-800 rounded-xl shadow-sm border border-slate-200 dark:border-night-600 p-4 space-y-4'>
-            <div class='h-5 bg-slate-200 dark:bg-night-600 rounded w-1/4 mb-4'></div>";
-    for ($i = 0; $i < 4; $i++) {
-        echo "<div class='flex items-center justify-between py-3 border-b border-slate-100 dark:border-night-700 last:border-0 gap-4'>
-                <div class='h-4 bg-slate-200 dark:bg-night-600 rounded w-20'></div>
-                <div class='h-4 bg-slate-200 dark:bg-night-600 rounded w-32'></div>
-                <div class='h-4 bg-slate-200 dark:bg-night-600 rounded w-48'></div>
-                <div class='h-4 bg-slate-200 dark:bg-night-600 rounded w-16'></div>
-                <div class='h-6 bg-slate-200 dark:bg-night-600 rounded-full w-20'></div>
-                <div class='h-4 bg-slate-200 dark:bg-night-600 rounded w-12'></div>
-              </div>";
-    }
-    echo "</div></div>";
 
     echo "<div id='manifest-data'>";
     require __DIR__ . '/views/stats.php';
