@@ -21,7 +21,10 @@ class BookingRepository
         $params = [];
 
         if (!empty($search)) {
-            $sql .= " AND (LOWER(first_name) LIKE :n1 ESCAPE '\\' OR LOWER(middle_name) LIKE :n2 ESCAPE '\\' OR LOWER(last_name) LIKE :n3 ESCAPE '\\' OR LOWER(pickup_point) LIKE :s1 ESCAPE '\\' OR LOWER(dropoff_point) LIKE :s2 ESCAPE '\\' OR LOWER(contact_number) LIKE :s3 ESCAPE '\\')";
+            // No ESCAPE clause: PHP < 8.4's PDO parser reads the backslash in ESCAPE '\' as
+            // escaping the closing quote, which desyncs its placeholder parsing (HY093).
+            // Postgres already treats backslash as the LIKE escape character by default.
+            $sql .= " AND (LOWER(first_name) LIKE :n1 OR LOWER(middle_name) LIKE :n2 OR LOWER(last_name) LIKE :n3 OR LOWER(pickup_point) LIKE :s1 OR LOWER(dropoff_point) LIKE :s2 OR LOWER(contact_number) LIKE :s3)";
             // Escape LIKE wildcards so a "%" or "_" typed by the user is matched literally.
             $searchClean = preg_replace('/\s+/', ' ', trim($search));
             $lowered = strtolower($searchClean);
